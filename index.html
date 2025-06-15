@@ -1,0 +1,206 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Naruto Quiz Generator</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to bottom, #ff9900, #fef4e5);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+      color: #1a1a1a;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+      max-width: 500px;
+      width: 100%;
+      text-align: center;
+    }
+    h1 {
+      font-family: 'Arial Black';
+      color: #ff5500;
+      margin-bottom: 1rem;
+    }
+    button, select {
+      padding: 0.6rem 1.2rem;
+      margin: 0.3rem;
+      border: none;
+      border-radius: 10px;
+      background: #ff5500;
+      color: white;
+      font-size: 1rem;
+    }
+    button:hover {
+      background: #cc4400;
+    }
+    .hidden { display: none; }
+    .option {
+      text-align: left;
+      margin: 0.5rem 0;
+    }
+    .timer {
+      font-size: 1.1rem;
+      font-weight: bold;
+      margin-bottom: 1rem;
+    }
+    .lang-toggle {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="lang-toggle">
+  <select id="langSelect" onchange="toggleLanguage()">
+    <option value="en">English</option>
+    <option value="hi">हिंदी</option>
+  </select>
+</div>
+
+<h1 id="title">Naruto Quiz</h1>
+
+<div class="card" id="upload-section">
+  <input type="file" id="pdfInput" accept=".pdf"><br><br>
+  <button onclick="uploadPDF()">Start Quiz</button>
+</div>
+
+<div class="card hidden" id="loading-section">
+  <img src="https://media.tenor.com/SdR1cySgBC8AAAAC/naruto-hinata.gif" width="200">
+  <p id="loadingText">Naruto is running to Hinata... Generating your quiz!</p>
+</div>
+
+<div class="card hidden" id="quiz-section">
+  <div class="timer" id="timer">Time Left: 00:00</div>
+  <div id="question-box"></div>
+  <div>
+    <button onclick="prevQuestion()">⬅️</button>
+    <button onclick="nextQuestion()">➡️</button>
+    <button onclick="togglePause()" id="pauseBtn">⏸️</button>
+  </div>
+</div>
+
+<div class="card hidden" id="result-section">
+  <h3 id="resultTitle">Quiz Finished!</h3>
+  <p id="result-text"></p>
+  <button onclick="retryQuiz()">Retry Quiz</button>
+  <button onclick="location.reload()">Start Again</button>
+</div>
+
+<script>
+  let questions = [], current = 0, timer = 0, timerInterval, paused = false, userAnswers = [];
+
+  function uploadPDF() {
+    const file = document.getElementById("pdfInput").files[0];
+    if (!file) return alert("Upload a PDF file.");
+    document.getElementById("upload-section").classList.add("hidden");
+    document.getElementById("loading-section").classList.remove("hidden");
+
+    const formData = new FormData();
+    formData.append("pdf", file);
+
+    fetch("https://quiz-backend.onrender.com/upload", {
+      method: "POST",
+      body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+      questions = data.questions;
+      if (!questions || questions.length === 0) throw new Error("No questions found.");
+      userAnswers = new Array(questions.length).fill(null);
+      timer = questions.length * 60;
+      document.getElementById("loading-section").classList.add("hidden");
+      document.getElementById("quiz-section").classList.remove("hidden");
+      showQuestion();
+      startTimer();
+    })
+    .catch(err => {
+      alert("Error generating quiz.");
+      location.reload();
+    });
+  }
+
+  function showQuestion() {
+    const q = questions[current];
+    let html = `<h3>Q${current + 1}/${questions.length}</h3><p>${q.question}</p>`;
+    q.options.forEach(opt => {
+      html += `<div class="option">
+        <input type="radio" name="q" value="${opt}" ${userAnswers[current] === opt ? 'checked' : ''} onchange="userAnswers[${current}] = '${opt}'"> ${opt}
+      </div>`;
+    });
+    document.getElementById("question-box").innerHTML = html;
+  }
+
+  function nextQuestion() {
+    if (current < questions.length - 1) current++;
+    showQuestion();
+  }
+
+  function prevQuestion() {
+    if (current > 0) current--;
+    showQuestion();
+  }
+
+  function togglePause() {
+    paused = !paused;
+    document.getElementById("pauseBtn").innerText = paused ? "▶️" : "⏸️";
+  }
+
+  function startTimer() {
+    timerInterval = setInterval(() => {
+      if (!paused) {
+        timer--;
+        const min = String(Math.floor(timer / 60)).padStart(2, '0');
+        const sec = String(timer % 60).padStart(2, '0');
+        document.getElementById("timer").innerText = `Time Left: ${min}:${sec}`;
+        if (timer <= 0) finishQuiz();
+      }
+    }, 1000);
+  }
+
+  function finishQuiz() {
+    clearInterval(timerInterval);
+    document.getElementById("quiz-section").classList.add("hidden");
+    document.getElementById("result-section").classList.remove("hidden");
+    let correct = 0, attempted = 0;
+    for (let i = 0; i < questions.length; i++) {
+      if (userAnswers[i]) attempted++;
+      if (userAnswers[i] === questions[i].answer) correct++;
+    }
+    const wrong = attempted - correct;
+    document.getElementById("result-text").innerText = `Attempted: ${attempted}, Correct: ${correct}, Wrong: ${wrong}`;
+  }
+
+  function retryQuiz() {
+    current = 0;
+    timer = questions.length * 60;
+    userAnswers = new Array(questions.length).fill(null);
+    document.getElementById("result-section").classList.add("hidden");
+    document.getElementById("quiz-section").classList.remove("hidden");
+    showQuestion();
+    startTimer();
+  }
+
+  function toggleLanguage() {
+    const lang = document.getElementById("langSelect").value;
+    document.getElementById("title").innerText = lang === "hi" ? "नारुतो प्रश्नोत्तरी" : "Naruto Quiz";
+    document.getElementById("loadingText").innerText = lang === "hi" ?
+      "नारुतो हिनाता की ओर दौड़ रहा है... प्रश्न तैयार हो रहे हैं!" :
+      "Naruto is running to Hinata... Generating your quiz!";
+    document.getElementById("resultTitle").innerText = lang === "hi" ? "प्रश्नोत्तरी समाप्त!" : "Quiz Finished!";
+  }
+</script>
+</body>
+</html>
